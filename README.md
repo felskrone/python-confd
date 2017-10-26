@@ -136,6 +136,7 @@ backend bedashboard.k8s.cluster.com
 The script can be either configured with commandline parameters or environment variables, not
 both at the same time. Supplying one parameter on the commandline disables environment awareness completely. I suggest using the parameters on the commandline for testing, once successful, transfer the configuration into your environment or ```docker -e``` parameters and run your container.
 
+```
   --ssl-key [SSL_KEY_FILE]
                         The SSL-client-key-file to use (default: None)
   --ssl-cert [SSL_CERT_FILE]
@@ -161,6 +162,7 @@ both at the same time. Supplying one parameter on the commandline disables envir
   --haproxy-reload-cmd [HAPROXY_RELOAD_CMD]
                         The command to reload/restart haproxy (default:
                         /etc/init.d/haproxy reload )
+```                        
 
 The same variables are supported when set in the environment.
 
