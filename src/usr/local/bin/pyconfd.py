@@ -184,7 +184,7 @@ class ArgParser(object):
         self.main_parser.add_argument(
             '--haproxy-reload-cmd',
             type=str,
-            default='/bin/systemctl reload-or-restart haproxy',
+            default='/etc/init.d/haproxy reload',
             dest='haproxy_reload_cmd',
             nargs='?',
             required=False,
@@ -458,7 +458,7 @@ def conf_from_env():
         'TEMPLATE_DIR': '/etc/pyconfd',
         'HAPROXY_CONF': '/etc/haproxy/haproxy.cfg',
         'HAPROXY_CHECK_CMD': '/usr/sbin/haproxy -c -q -f',
-        'HAPROXY_RELOAD_CMD': '/bin/systemctl reload-or-restart haproxy',
+        'HAPROXY_RELOAD_CMD': '/etc/init.d/haproxy reload',
         'IGNORE_PROXY_ENV': True
     }
     found_vars = {}
