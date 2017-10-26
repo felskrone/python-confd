@@ -1,0 +1,108 @@
+global
+    maxconn 4096
+    log /dev/log    local0
+    log /dev/log    local1 notice
+    user haproxy
+    group haproxy
+
+defaults
+    log global
+    mode    http
+    option  httplog
+    option  dontlognull
+    option  redispatch
+    retries 3
+    maxconn 2000
+    timeout connect 5000
+    timeout client  50000
+    timeout server  50000
+    stats enable
+    stats refresh 10s
+    stats uri /stats
+    stats auth admin:gimmestats!
+    errorfile 400 /etc/haproxy/errors/400.http
+    errorfile 403 /etc/haproxy/errors/403.http
+    errorfile 408 /etc/haproxy/errors/408.http
+    errorfile 500 /etc/haproxy/errors/500.http
+    errorfile 502 /etc/haproxy/errors/502.http
+    errorfile 503 /etc/haproxy/errors/503.http
+    errorfile 504 /etc/haproxy/errors/504.http
+
+#
+# template file <TemplateReference '02-http.tmpl'>
+# Accept all http-connections and forward them by http-header HOST field.
+# If no acl-match is found, forward to default landing page.
+#
+frontend http-in
+    bind *:80
+    mode http
+    option httplog
+    option httpclose
+    option forwardfor
+    reqadd X-Forwarded-Proto:\ http
+    acl grafana_k8s_cluster_com hdr(host) -i grafana.k8s.cluster.com
+    use_backend begrafana.k8s.cluster.com if grafana_k8s_cluster_com
+    default_backend landing-page
+
+
+# all http-backends
+backend begrafana.k8s.cluster.com
+    mode http
+    balance roundrobin
+    option forwardfor
+    http-request set-header X-Forwarded-Port %[dst_port]
+    http-request add-header X-Forwarded-Proto https if { ssl_fc }
+    server 10_244_0_77 10.244.0.77:3000 check
+
+#
+# template file <TemplateReference '03-https.tmpl'>
+# Accept all SSL-connections and forward request by SNI-header to
+# corresponding backend which MUST be ssl-enabled to work.
+#
+frontend https-in
+    bind *:443
+    mode tcp
+    option tcplog
+    acl tls req.ssl_hello_type 1
+    tcp-request inspect-delay 5s
+    tcp-request content accept if tls
+    acl dashboard_k8s_cluster_com req.ssl_sni -i dashboard.k8s.cluster.com
+    use_backend bedashboard.k8s.cluster.com if dashboard_k8s_cluster_com
+
+
+
+backend bedashboard.k8s.cluster.com
+    mode tcp
+    balance roundrobin
+    option forwardfor
+    http-request set-header X-Forwarded-Port %[dst_port]
+    http-request add-header X-Forwarded-Proto https if { ssl_fc }
+    server 10_244_5_164 10.244.5.164:8443 check
+
+#
+# template file <TemplateReference '04-redis.tmpl'>
+# Accept redis connections on the redis default port
+#
+frontend redis.k8s.cluster.com
+    bind *:6379
+    mode tcp
+    default_backend beredis.k8s.cluster.com
+
+backend beredis.k8s.cluster.com
+    option tcp-check
+    mode tcp
+    tcp-check connect
+    tcp-check comment PINGING\ Redis
+    tcp-check send PING\r\n
+    tcp-check comment Excepting\ PONG
+    tcp-check expect string +PONG
+    tcp-check comment Redis\ Role\ check
+    tcp-check send info\ replication\r\n
+    tcp-check comment Excepting\ role:master
+    tcp-check expect string role:master
+    tcp-check comment Got\ Role\ Master,\ Quit
+    tcp-check send QUIT\r\n
+    tcp-check expect string +OK
+    server 10_264_0_87 10.264.0.87:6379 check
+    server 10_264_5_172 10.264.5.172:6379 check
+    server 10_264_6_158 10.264.6.158:6379 check
