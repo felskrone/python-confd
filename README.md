@@ -1,10 +1,16 @@
+
 # python-confd
-A Python-Client that retrieves kubernetes endpoints from its API, generates a HAProxy configuration file and restarts/reloads HAProxy if any changes were found.
+A Python-Client that retrieves kubernetes endpoints from its API, generates a HAProxy configuration file and restarts/reloads HAProxy only, if any changes were found.
+
+See a [sample configuration](https://github.com/felskrone/python-confd/blob/master/haproxy.cfg.sample) generated which serves http, https and redis with endpoints retrieved from kubernetes.
+
+## Requirements
+A Kubernetes cluster with API-access and endpoints.    
 
 ## Another one? Why not use confd?
 Because kubernetes stores its data in etcd in protobuf format (since 1.3?, before that it was plain text) and confd does not (yet) support protobuf. Also confd queries etcd directly while pyconfd queries the kubernetes-api which i consider a cleaner way of communicating with kubernetes. 
 
-Besides that, there is nothing wrong with confd, except that i dont know Go nor its text/template engine :-)
+Besides that conf would be fine, except that i do not know Go nor its text/template engine :-)
 
 ## What does it do exactly?
 The script queries the Kubernetes-API-endpoint ```http(s):<apihost>:<port>/api/v1/endpoints``` and retrieves all endpoints configured in kubernetes (this, hopefully in your setup, requires some kind of authentication, but thats out of scope for this documentation). The configured endpoints are mapped into a simplified python dictionary which is then passed into the templates.
@@ -198,7 +204,7 @@ Same as above, but try multiple API-servers in order or appearance
    --ssl-key /etc/pyconfd/admin-key.pem \
    --ssl-cert /etc/pyconfd/admin.pem \
    --ssl-ca /etc/pyconfd/ca.pem \
-   --api-servers https://10.31.12.49:6443,https://10.31.12.51:6443,https://10.31.13.49:6443 \
+   --api-servers https://10.31.12.49:6443,https://10.31.12.51:6443,https://10.31.12.59:6443 \
    --log-level debug
 ```
 Once the tests are finished, update the Makefile to suite your needs.
@@ -207,7 +213,25 @@ Once the tests are finished, update the Makefile to suite your needs.
 Depending on your kubernetes-setup, update the SSL-files in ./src/etc/pyconfd/*.pem with proper
 SSL-key, SSL-cert and CA information. This repo only contains empty dummy files to successfully build the container image. If you dont set ```SSL_KEY_FILE``` or ```SSL_CERT_FILE``` the dummy files will be ignored anyway.
 
-Build the image
+**Manually**
+
+```
+docker run \
+  -d \
+  -e "APISERVERS=https://10.31.12.49:6443" \
+  -e "SSL_CA_FILE=/etc/pyconfd/ca.pem" \
+  -e "SSL_KEY_FILE=/etc/pyconfd/admin-key.pem" \
+  -e "SSL_CERT_FILE=/etc/pyconfd/admin.pem" \
+  -e "LOGLEVEL=debug" \
+  -e "HAPROXY_RELOAD_CMD=/etc/init.d/haproxy  reload" \
+  -p 80:80 \
+  -p 443:443 \
+  haproxy/pyconfd
+```
+
+**With the Makefile**
+
+Build the image 
 ```
 make build
 ```
@@ -219,5 +243,21 @@ make run
 Once the image is built and the Makefile updated (beware of spaces instead of the required TABs), run the container
 ``` 
 make daemon
+```
+
+## Exposing non http(s)-service-endpoints
+Works the very same way as http(s) endpoints, except that **proto** should be set to a keyword you look for in your template-files. To expose the redis-service with our HAProxy, annotate the redis-service with **proto=redis** and in your redis-service-template extract only the data you need. See below for the sample-jinja-code taken from ```04-redis.tmpl```.
+
+```
+{%- for domain, items in domains.items() %}
+{%- if items.proto == 'redis' %}
+{%- set var_name = domain|replace('.', '_') %}
+{% set be_name = 'be' + domain %}
+
+frontend {{ domain }}
+    bind *:6379
+    ...
+{% endif %}
+{% endfor %}
 ```
 
