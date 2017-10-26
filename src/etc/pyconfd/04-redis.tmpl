@@ -1,0 +1,35 @@
+#
+# template file {{ self }}
+# Accept redis connections on the redis default port
+#
+{%- for domain, items in domains.items() %}
+{%- if items.proto == 'redis' %}
+{%- set var_name = domain|replace('.', '_') %}
+{% set be_name = 'be' + domain %}
+
+frontend {{ domain }}
+    bind *:6379
+    mode tcp
+    default_backend {{ be_name }}
+
+backend {{ be_name }}
+    option tcp-check
+    mode tcp
+    tcp-check connect
+    tcp-check comment PINGING\ Redis
+    tcp-check send PING\r\n
+    tcp-check comment Excepting\ PONG
+    tcp-check expect string +PONG
+    tcp-check comment Redis\ Role\ check
+    tcp-check send info\ replication\r\n
+    tcp-check comment Excepting\ role:master
+    tcp-check expect string role:master
+    tcp-check comment Got\ Role\ Master,\ Quit
+    tcp-check send QUIT\r\n
+    tcp-check expect string +OK
+    {% for ip in items['ips'] -%}
+    server {{ ip|replace('.', '_') }} {{ ip }}:{{ items['port'] }} check
+    {% endfor %}
+
+{% endif %}
+{% endfor %}

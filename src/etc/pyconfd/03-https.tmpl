@@ -1,0 +1,39 @@
+#
+# template file {{ self }}
+# Accept all SSL-connections and forward request by SNI-header to
+# corresponding backend which MUST be ssl-enabled to work.
+#
+frontend https-in
+    bind *:443
+    mode tcp
+    option tcplog
+    acl tls req.ssl_hello_type 1
+    tcp-request inspect-delay 5s
+    tcp-request content accept if tls
+    {% for domain, items in domains.items() -%}
+    {% if items.proto == 'https' -%}
+    {% set var_name = domain|replace('.', '_') -%}
+    {% set be_name = 'be' + domain -%}
+    acl {{ var_name }} req.ssl_sni -i {{ domain }}
+    use_backend {{ be_name }} if {{ var_name }}
+    {% endif %}
+    {%- endfor %}
+
+
+{% for domain, items in domains.items() %}
+{% if items.proto == 'https' %}
+{% set var_name = domain|replace('.', '_') %}
+{% set be_name = 'be' + domain %}
+
+backend {{ be_name }}
+    mode tcp
+    balance roundrobin
+    option forwardfor
+    http-request set-header X-Forwarded-Port %[dst_port]
+    http-request add-header X-Forwarded-Proto https if { ssl_fc }
+    {% for ip in items['ips'] -%}
+    server {{ ip|replace('.', '_') }} {{ ip }}:{{ items['port'] }} check
+    {% endfor %}
+
+{% endif %}
+{%- endfor %}

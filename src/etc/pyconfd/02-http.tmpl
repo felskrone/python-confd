@@ -1,0 +1,49 @@
+#
+# template file {{ self }}
+# Accept all http-connections and forward them by http-header HOST field.
+# If no acl-match is found, forward to default landing page.
+#
+frontend http-in
+    bind *:80
+    mode http
+    option httplog
+    option httpclose
+    option forwardfor
+    reqadd X-Forwarded-Proto:\ http
+    {% for domain, items in domains.items() -%}
+    {% if items.proto == 'http' -%}
+    {% set var_name = domain|replace('.', '_') -%}
+    {% set be_name = 'be' + domain -%}
+    acl {{ var_name }} hdr(host) -i {{ domain }}
+    use_backend {{ be_name }} if {{ var_name }}
+    {% endif %}
+    {%- endfor -%}
+    default_backend landing-page
+
+{% for domain, items in domains.items() %}
+{% if items.proto == 'http' %}
+{% set var_name = domain|replace('.', '_') %}
+{% set be_name = 'be' + domain %}
+
+# all http-backends 
+backend {{ be_name }}
+    mode http
+    balance roundrobin
+    option forwardfor
+    http-request set-header X-Forwarded-Port %[dst_port]
+    http-request add-header X-Forwarded-Proto https if { ssl_fc }
+    {% for ip in items['ips'] -%}
+    server {{ ip|replace('.', '_') }} {{ ip }}:{{ items['port'] }} check
+    {% endfor %}
+
+{% endif %}
+{% endfor %}
+#
+# The default landing page if the checks in http-in did not match any acl
+#
+backend landing-page
+    mode http
+    option httplog
+    errorfile 503 /etc/haproxy/www/index.html
+
+
