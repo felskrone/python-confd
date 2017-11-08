@@ -1,5 +1,5 @@
 build:
-	docker build -t haproxy/pyconfd .	
+	docker build -t haproxy/pyconfd . -t haproxy/pyconfd:latest
 
 run:
 	docker run \
