@@ -10,12 +10,13 @@ RUN apt-get update && \
     chown haproxy:haproxy /var/run/haproxy.pid && \
     rm -rf /var/lib/apt/lists/*
 
-RUN mkdir -p /etc/pyconfd
+RUN mkdir -p /etc/pyconfd/www
 
 ADD ./src/etc/pyconfd/ /etc/pyconfd/
 ADD ./src/etc/pyconfd/ca.pem /etc/pyconfd/ssl/ca.pem
 ADD ./src/etc/pyconfd/admin1.pem /etc/pyconfd/admin1.pem
 ADD ./src/etc/pyconfd/admin1-key.pem /etc/pyconfd/admin1-key.pem
+ADD ./src/etc/pyconfd/www/index.html /etc/pyconfd/www/index.html
 
 ADD ./src/usr/local/bin/pyconfd.py /usr/local/bin/pyconfd
 RUN chmod +x /usr/local/bin/pyconfd
