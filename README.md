@@ -22,7 +22,7 @@ See a generated [sample configuration](https://github.com/felskrone/python-confd
 
 Combined with Keepalived for a floating Service-IP it offers highly available clustered services outside AWS/GCE.
 
-![pyconfd with keepalived](https://github.com/felskrone/utils/blob/master/pyconfd_overview.svg)
+![pyconfd with keepalived](https://github.com/felskrone/python-confd/blob/master/pyconfd_overview.svg)
 
 ### Cant ingress do that as well?
 Yes, but the documentation is still lacking and has many lose ends. I could not get it to run.
