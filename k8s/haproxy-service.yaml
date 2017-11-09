@@ -1,0 +1,22 @@
+kind: Service
+apiVersion: v1
+metadata:
+  name: haproxy-pyconfd
+spec:
+  selector:
+    name: haproxy-pyconfd
+  ports:
+  - name: redis
+    protocol: TCP
+    port: 6379
+    targetPort: 6379
+  - name: http
+    protocol: TCP
+    port: 80
+    targetPort: 80
+  - name: https
+    protocol: TCP
+    port: 443
+    targetPort: 443
+  externalIPs:
+  - <your_node_ip>

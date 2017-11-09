@@ -1,0 +1,38 @@
+apiVersion: v1
+kind: ReplicationController
+metadata:
+  name: haproxy-pyconfd
+spec:
+  replicas: 2
+  selector:
+    name: haproxy-pyconfd
+  template:
+    metadata:
+      labels:
+        name: haproxy-pyconfd
+    spec:
+      nodeSelector:
+        node_role: 'haproxy'
+      containers:
+      - name: haproxy-pyconfd
+        image: haproxy/pyconfd:latest
+        # Once we get our registry running, remove this line to have the kubelet
+        # always retrieve the latest image and not settle with the local version
+        imagePullPolicy: IfNotPresent
+        env:
+          - name: SSL_KEY_FILE
+            value: /etc/pyconfd/admin1-key.pem
+          - name: SSL_CERT_FILE
+            value: /etc/pyconfd/admin1.pem
+          - name: SSL_CA_FILE
+            value: /etc/pyconfd/ca.pem
+          - name: LOGLEVEL
+            value: DEBUG
+          - name: APISERVERS
+            value: "https://kubernetes"
+        securityContext:
+          privileged: true
+        ports:
+          - containerPort: 80
+          - containerPort: 443
+          - containerPort: 6379
