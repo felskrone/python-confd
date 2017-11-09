@@ -477,6 +477,8 @@ if __name__ == '__main__':
 
     log = MyLogger(level=args['loglevel'])
 
+    log.debug('Invoked with: {0}'.format(args))
+
     while True:
         try:
             log.info('#########################################')
