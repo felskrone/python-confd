@@ -13,3 +13,8 @@ run:
 	-p 443:443 \
 	-p 6379:6379 \
 	haproxy/pyconfd
+migrate:
+	docker save haproxy/pyconfd:latest -o tmp_image.tar
+	kpod -s overlay2 load < tmp_image.tar && rm -vf tmp_image.tar
+
+
