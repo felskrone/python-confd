@@ -1,18 +1,47 @@
 
-# python-confd
-A Python-Client that retrieves kubernetes endpoints from its API, generates a HAProxy configuration file and restarts/reloads HAProxy only, if any changes were found.
+# Contents
 
-See a [sample configuration](https://github.com/felskrone/python-confd/blob/master/haproxy.cfg.sample) generated which serves http, https and redis with endpoints retrieved from kubernetes.
+  1. [python-confd - What it does](#whatitdoes)
+  2. [Requirements](#requirements)
+  3. [What does it do exactly?](#exactly)
+      * [The templates and configs](#templates)
+      * [Exposing non HTTP(S) Services](#exposing)
+      * [Configuration options](#config)
+      * [Testing pyconfd with kubernetes-api](#testing)
+  4. [Building and running the Container](#building)
+  5. [Kubernetes Manifests](#manifests)
+  6. [Keepalived floating IP](#floating)
 
-## Requirements
-A Kubernetes cluster with API-access and endpoints.    
 
-## Another one? Why not use confd?
+# python-confd - What it does<a name="whatitdoes"></a>
+A containerized python-client that acts as an entrypoint to kubernetes cluster-services and makes them accessible to clients from outside the cluster without the need for a GCE/AWS-loadbalancer.
+
+It does so by retrieving kubernetes-endpoints from the kubernetes-API, generating a HAPRoxy config and restarting/reloading HAProxy on changes. New kubernetes-services and/or backend-pods are automatically added and do not require updating any config by hand.
+
+See a generated [sample configuration](https://github.com/felskrone/python-confd/blob/master/haproxy.cfg.sample)  which serves http, https and redis with endpoints retrieved from kubernetes.
+
+Combined with Keepalived for a floating Service-IP it offers highly available clustered services outside AWS/GCE.
+
+![pyconfd with keepalived](https://github.com/felskrone/utils/blob/master/pyconfd_overview.svg)
+
+### Cant ingress do that as well?
+Yes, but the documentation is still lacking and has many lose ends. I could not get it to run.
+
+### Why not use confd?
 Because kubernetes stores its data in etcd in protobuf format (since 1.3?, before that it was plain text) and confd does not (yet) support protobuf. Also confd queries etcd directly while pyconfd queries the kubernetes-api which i consider a cleaner way of communicating with kubernetes. 
 
-Besides that conf would be fine, except that i do not know Go nor its text/template engine :-)
+Besides that confd would be fine, except that i do not know Go nor its text/template engine :-)
 
-## What does it do exactly?
+
+## Requirements<a name="requirements"></a>
+A running kubernetes cluster with API-access and endpoints.
+
+A kube-dns-service which resolves 'kubernetes' to the kubernetes-services service-ip. Without DNS you will have to configure the domain manually.
+
+If you want to use Keepalived, at least two designated HAProxy-nodes to float a service-ip inbetween. The nodes can also serve as normal kubernetes worker nodes, they are not limited to doing proxy work. Technically you can float the service-ip between all worker-nodes but if thats what you want to do.
+
+
+## What does it do exactly?<a name="exactly"></a>
 The script queries the Kubernetes-API-endpoint ```http(s):<apihost>:<port>/api/v1/endpoints``` and retrieves all endpoints configured in kubernetes (this, hopefully in your setup, requires some kind of authentication, but thats out of scope for this documentation). The configured endpoints are mapped into a simplified python dictionary which is then passed into the templates.
 
 To have an endpoint present in the python-dict passed into the templates, it **_has_** to be annotated in kubernetes with the keywords **domain** and **proto**. If either is missing, the endpoint is ignored/skipped.
@@ -90,7 +119,7 @@ If i were to add an http-service like grafana with annotations like **domain=gra
 
 What you do with that data in your templates is up to you. See below what the default templates do.
 
-## The templates and configs
+### The templates and configs<a name="templates"></a>
 pyconfd supports two kinds of files in its template_dir. Templates named **\*.tmpl** and plain configs named **\*.conf**. If you require a certain order in which these files are processed, prefix them with digits like ```01-, 02-```, etc. Otherwise the order is whatever ```os.listdir()``` may return.
 
 **\*.conf** files are added to the generated configuration file as is, use them for static values only.
@@ -120,7 +149,7 @@ backend begrafana_k8s_cluster_com
     server 10_244_0_77 10.244.0.77:3000 check
 ```
 
-As you can see, the **domain** field from the kubernetes annotation is converted into an variable and used to map frontend-http-requests to the corresponding http-backend. Any additional kubernetes-endpoint with **proto=http** would transfer into an additional ACL-Line and a standalone backend. The very same applies to **proto=https**, except that the ACL-line checks for the SNI-header instead of the HOST-header.
+As you can see, the **domain** field from the kubernetes annotation is converted into an variable and used to map frontend-http-requests to the corresponding http-backend. Any additional kubernetes-endpoint with **proto=http** would transflate into an additional ACL-Line and a standalone backend. The very same applies to **proto=https**, except that the ACL-line checks for the SNI-header instead of the HOST-header.
 ```
 ...
 acl dashboard_k8s_cluster_com req.ssl_sni -i dashboard.k8s.cluster.com
@@ -132,9 +161,25 @@ backend bedashboard.k8s.cluster.com
 ...
 ```
 
-## Configuration
+### Exposing non http(s)-service-endpoints<a name="exposing"></a>
+Works the very same way as http(s) endpoints, except that **proto** should be set to a keyword you look for in your template-files. To expose the redis-service with our HAProxy, annotate the redis-service with **proto=redis** and in your redis-service-template extract only the data you need. See below for the sample-jinja-code taken from ```04-redis.tmpl```.
+
+```
+{%- for domain, items in domains.items() %}
+{%- if items.proto == 'redis' %}
+{%- set var_name = domain|replace('.', '_') %}
+{% set be_name = 'be' + domain %}
+
+frontend {{ domain }}
+    bind *:6379
+    ...
+{% endif %}
+{% endfor %}
+```
+
+## Configuration<a name="config"></a>
 The script can be either configured with commandline parameters or environment variables, not
-both at the same time. Supplying one parameter on the commandline disables environment awareness completely. I suggest using the parameters on the commandline for testing, once successful, transfer the configuration into your environment or ```docker -e``` parameters and run your container.
+both at the same time. Supplying one parameter on the commandline disables environment awareness completely. I suggest using the parameters on the commandline for testing, once successful, transfer the configuration into your environment or ```docker -e``` parameters and run your container. For Kubernetes manifests see below.
 
 ```
   --ssl-key [SSL_KEY_FILE]
@@ -180,7 +225,7 @@ The same variables are supported when set in the environment.
 | HAPROXY_RELOAD_CMD| /bin/systemctl reload-or-restart haproxy |
 
 
-## Testing pyconfd with your kubernetes-api
+### Testing pyconfd with your kubernetes-api<a name="testing"></a>
 All examples assume a debian-stretch-default HAPRoxy installation and systemd. Adjust
 **--haproxy-\*** parameters accordingly if your setup differs.
 
@@ -211,7 +256,7 @@ Same as above, but try multiple API-servers in order or appearance
 ```
 Once the tests are finished, update the Makefile to suite your needs.
 
-## Building and starting the container
+## Building and running the container<a name="building"></a>
 Depending on your kubernetes-setup, update the SSL-files in ./src/etc/pyconfd/*.pem with proper
 SSL-key, SSL-cert and CA information. This repo only contains empty dummy files to successfully build the container image. If you dont set ```SSL_KEY_FILE``` or ```SSL_CERT_FILE``` the dummy files will be ignored anyway.
 
@@ -247,19 +292,25 @@ Once the image is built and the Makefile updated (beware of spaces instead of th
 make daemon
 ```
 
-## Exposing non http(s)-service-endpoints
-Works the very same way as http(s) endpoints, except that **proto** should be set to a keyword you look for in your template-files. To expose the redis-service with our HAProxy, annotate the redis-service with **proto=redis** and in your redis-service-template extract only the data you need. See below for the sample-jinja-code taken from ```04-redis.tmpl```.
+# Kubernetes Manifests<a name="manifests"></a>
+For running haproxy/pyconfd on kubernetes the two manifests can be used.
 
-```
-{%- for domain, items in domains.items() %}
-{%- if items.proto == 'redis' %}
-{%- set var_name = domain|replace('.', '_') %}
-{% set be_name = 'be' + domain %}
+**[haproxy-controller.yaml](https://github.com/felskrone/python-confd/blob/master/k8s/haproxy-controller.yaml)** - Creates a replication controller which starts a pod on all nodes with the '*node_role=haproxy*'. That nodes should be the ones running keepalived with the floating ip. If you labeled your nodes differently or not at all, make sure you the replication-controller is able to find your pods.
 
-frontend {{ domain }}
-    bind *:6379
-    ...
-{% endif %}
-{% endfor %}
+**[haproxy-service.yaml](https://github.com/felskrone/python-confd/blob/master/k8s/haproxy-service.yaml)**
+
+Containers can not bind to node interfaces/ips. Docker can do that with something like
+
+```bash
+docker -p IP:host_port:container_port
 ```
 
+but in kubernetes thats currently not possible (afaik). To make the services of the HAProxy available on the nodes keepalived-floating ip, we need a kubernetes-service which forwards the traffic for the floating ip to our HAProxy.
+
+Make sure you update the the '**externalIP**' in haproxy-service.yaml to reflect your floating ip. Also make sure to have the selector only find the pods that are actually running haproxy/pyconfd by updating it if necessary.
+
+
+## Keepalived floating IP<a name='floating'></a>
+To get you started more easily,  [here's](https://github.com/felskrone/python-confd/blob/master/keepalived/keepalived.conf) is the config to float a service-ip between two (or more) nodes. Be sure to update all occurences of '<your_...>' with correct info.
+
+The failover-script referenced in the config also requires you to set the correct interface!
